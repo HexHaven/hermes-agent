@@ -144,3 +144,44 @@ async def test_attach_token_reuses_default_chat_after_active_session_fallback(
         ws2.send_bytes(b"again")
 
     assert pty_keepalive_harness == [["x", "fresh"]]
+
+
+@pytest.mark.asyncio
+async def test_cwd_attach_key_cannot_collide_with_opaque_legacy_token(
+    pty_keepalive_harness, tmp_path,
+):
+    from urllib.parse import urlencode
+    from starlette.testclient import TestClient
+
+    client = TestClient(web_server.app)
+    requests = [
+        {"attach": "shared", "cwd": str(tmp_path)},
+        {"attach": f"shared\0cwd\0{tmp_path}"},
+        {"attach": "shared", "cwd": str(tmp_path)},
+    ]
+    for query in requests:
+        with client.websocket_connect("/api/pty?" + urlencode(query)) as ws:
+            ws.send_bytes(b"input")
+    assert len(pty_keepalive_harness.bridges) == 2
+
+
+@pytest.mark.parametrize("scope", ["", "&profile=work&resume=same"])
+@pytest.mark.asyncio
+async def test_attach_token_separates_cwd_and_legacy_launch(
+    pty_keepalive_harness, tmp_path, scope,
+):
+    from urllib.parse import urlencode
+    from starlette.testclient import TestClient
+
+    a = tmp_path / "a"
+    b = tmp_path / "b"
+    a.mkdir()
+    b.mkdir()
+    client = TestClient(web_server.app)
+    for cwd in [str(a), str(b), None, str(a / "."), str(b), None]:
+        query = "" if cwd is None else "&" + urlencode({"cwd": cwd})
+        with client.websocket_connect("/api/pty?attach=shared" + scope + query) as ws:
+            ws.send_bytes(b"input")
+    assert len(pty_keepalive_harness.bridges) == 3
+    for bridge in pty_keepalive_harness.bridges:
+        assert bytes(bridge.written) == b"input\x0cinput"

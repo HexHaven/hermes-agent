@@ -139,6 +139,34 @@ describe('GatewayClient websocket attach mode', () => {
     }
   })
 
+  it.each([
+    ['session.create', undefined, { cols: 80 }, { cols: 80 }],
+    ['session.create', '/chosen workspace', { cols: 80 }, { cols: 80, cwd: '/chosen workspace' }],
+    ['session.create', '/chosen workspace', { cwd: '/rpc choice' }, { cwd: '/rpc choice' }],
+    ['session.resume', '/chosen workspace', { session_id: 'saved' }, { session_id: 'saved' }]
+  ])('forwards launch cwd only to new sessions (%s, %s)', async (method, cwd, params, expected) => {
+    vi.stubEnv('HERMES_CWD', '/inherited launch directory')
+    vi.stubEnv('HERMES_TUI_LAUNCH_CWD', cwd)
+    process.env.HERMES_TUI_GATEWAY_URL = 'ws://gateway.test/api/ws'
+    const gw = new GatewayClient()
+
+    try {
+      gw.start()
+      const socket = FakeWebSocket.instances[0]!
+      socket.open()
+      const req = gw.request(method as string, params as Record<string, unknown>)
+      await vi.waitFor(() => expect(socket.sent).toHaveLength(1))
+      const frame = JSON.parse(socket.sent[0]!)
+      socket.message(JSON.stringify({ id: frame.id, jsonrpc: '2.0', result: {} }))
+      await req
+      expect(frame.params).toEqual(expected)
+      expect(params).not.toHaveProperty('cwd', '/chosen workspace')
+    } finally {
+      gw.kill()
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('waits for websocket open and resolves RPC requests', async () => {
     process.env.HERMES_TUI_GATEWAY_URL = 'ws://gateway.test/api/ws?token=abc'
     const gw = new GatewayClient()
