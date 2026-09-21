@@ -148,6 +148,8 @@ function preserveStructuralParts(message: ChatMessage, previous: ChatMessage): C
 //   timestamp  — presentation-only (sort/age display), never affects transcript equality
 //   attachmentRefs — composer-side metadata; already reconciled in reconcileResumeMessages
 //   rowId — durable backend identity; stable for a given row, never changes what's painted
+//   serverRowSpan — backend rows the folded message covers; the older-page offset
+//                   accounting reads it, the transcript never paints it
 //
 // If your new field affects what the user sees in the transcript, add it to
 // COMPARED. If it's metadata that shouldn't trigger a re-render, add it to
@@ -177,7 +179,7 @@ const COMPARED_FIELDS = [
   'durationS'
 ] as const
 
-const IGNORED_FIELDS = ['attachmentRefs', 'parts', 'rowId'] as const
+const IGNORED_FIELDS = ['attachmentRefs', 'parts', 'rowId', 'serverRowSpan'] as const
 
 // Compile-time check: every ChatMessagePart discriminant must be handled by
 // chatPartsEquivalent. If @assistant-ui adds a new part type, this fails tsc.
@@ -1477,6 +1479,20 @@ export function restoreListedSession(session: SessionInfo, slice?: ListedSession
 
 function upsertResolvedSession(session: SessionInfo, storedSessionId: string) {
   const lineage = session._lineage_root_id ?? session.id
+
+  // A hidden row (canonical Bot Chat, room plumbing) is unlisted by design:
+  // inserting it into $sessions paints a sidebar row until the next refresh,
+  // and the keep-list then holds it there (#113273). Park it on the off-list
+  // owner atom the draft stubs ride — owner resolution still finds it via
+  // ownerLookupSessionRows, the sidebar never does.
+  if (session.hidden) {
+    setUnlistedSessionOwnerRows(prev => [
+      session,
+      ...prev.filter(existing => (existing._lineage_root_id ?? existing.id) !== lineage)
+    ])
+
+    return
+  }
 
   const prepend = (prev: SessionInfo[]) => [
     session,
