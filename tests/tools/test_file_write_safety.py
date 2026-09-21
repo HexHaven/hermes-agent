@@ -849,3 +849,59 @@ class TestMultiplexProfileWriteGuardsAreProfileScoped:
             reset_hermes_home_override(tok)
         assert err is not None
         assert "Refusing to write to Hermes config file" in err
+
+
+class TestSoulWorkshopExemption:
+    """``<workshop>/**/SOUL.md`` drafts write without the always-ask gate; everything
+    else under and around the tree keeps it. Root is pinned to ``tmp_path`` so the
+    test never touches the real ``~/Zendo``."""
+
+    @pytest.fixture
+    def workshop(self, tmp_path, monkeypatch):
+        import tools.file_tools_write_guards as ft
+        monkeypatch.setattr(ft, "_protected_instruction_config", lambda: (True, []))
+        root = tmp_path / "Zendo" / "Agents" / "Hermes"
+        (root / "Alpha").mkdir(parents=True)
+        monkeypatch.setattr(ft, "_SOUL_WORKSHOP_ROOTS", (str(root),))
+        return root
+
+    def test_workshop_soul_is_not_gated(self, workshop):
+        import tools.file_tools_write_guards as ft
+        assert ft._protected_instruction_reason(str(workshop / "Alpha" / "SOUL.md")) is None
+        assert ft._protected_instruction_reason(str(workshop / "Alpha" / ".." / "Alpha" / "SOUL.md")) is None
+
+    def test_other_files_in_tree_and_soul_outside_tree_stay_gated(self, workshop, tmp_path):
+        import tools.file_tools_write_guards as ft
+        assert ft._protected_instruction_reason(str(workshop / "Alpha" / "AGENTS.md")) == "AGENTS.md"
+        assert ft._protected_instruction_reason(str(workshop / "Alpha" / "soul.md")) == "soul.md"
+        assert ft._protected_instruction_reason(str(workshop / "Alpha" / "SOUL.md.bak")) is None
+        assert ft._protected_instruction_reason(str(tmp_path / "SOUL.md")) == "SOUL.md"
+        assert ft._protected_instruction_reason(str(workshop.parent / "SOUL.md")) == "SOUL.md"
+        assert ft._protected_instruction_reason(str(workshop / "Alpha" / ".." / ".." / "SOUL.md")) == "SOUL.md"
+
+    def test_symlink_escaping_the_tree_stays_gated(self, workshop, tmp_path):
+        import tools.file_tools_write_guards as ft
+        outside = tmp_path / "elsewhere"
+        outside.mkdir()
+        (outside / "SOUL.md").write_text("live soul\n", encoding="utf-8")
+        (workshop / "Alpha" / "SOUL.md").symlink_to(outside / "SOUL.md")
+        assert ft._protected_instruction_reason(str(workshop / "Alpha" / "SOUL.md")) == "SOUL.md"
+        # Symlinked directory inside the tree pointing out: same verdict.
+        (workshop / "Linked").symlink_to(outside, target_is_directory=True)
+        assert ft._protected_instruction_reason(str(workshop / "Linked" / "SOUL.md")) == "SOUL.md"
+
+    def test_write_file_lands_without_approval_prompt(self, workshop):
+        import json
+        from tools.file_tools import write_file_tool
+        from tools.terminal_tool import set_approval_callback
+        calls = []
+        set_approval_callback(lambda command, description, **kw: calls.append(command) or "deny")
+        try:
+            res = json.loads(write_file_tool(str(workshop / "Alpha" / "SOUL.md"), "draft\n"))
+            blocked = json.loads(write_file_tool(str(workshop / "Alpha" / "AGENTS.md"), "x\n"))
+        finally:
+            set_approval_callback(None)
+        assert not res.get("error"), res
+        assert (workshop / "Alpha" / "SOUL.md").read_text(encoding="utf-8") == "draft\n"
+        assert blocked.get("error") and "BLOCKED" in blocked["error"]
+        assert len(calls) == 1

@@ -183,6 +183,27 @@ def _check_sensitive_path(filepath: str, task_id: str = "default") -> str | None
 _PROTECTED_INSTRUCTION_BASENAMES = frozenset({
     "agents.md", "claude.md", "soul.md", ".cursorrules"})
 
+# Soul workshop: ``~/Zendo/Agents/Hermes/**/SOUL.md`` are drafts, not the Souls any
+# profile loads (those live under the Hermes home). Exact basename only, realpath
+# strictly inside the tree — a symlink whose target lies outside stays gated.
+_SOUL_WORKSHOP_ROOTS = ("~/Zendo/Agents/Hermes",)
+_SOUL_WORKSHOP_BASENAME = "SOUL.md"
+
+
+def _is_soul_workshop_file(normalized: str, resolved: str) -> bool:
+    """True when both the path as given and its realpath name a ``SOUL.md`` inside a
+    workshop root. Resolved is checked by realpath so ``..`` and symlinks cannot
+    place the write outside the tree."""
+    if os.path.basename(normalized) != _SOUL_WORKSHOP_BASENAME:
+        return False
+    if os.path.basename(resolved) != _SOUL_WORKSHOP_BASENAME:
+        return False
+    for root in _SOUL_WORKSHOP_ROOTS:
+        real_root = os.path.realpath(_expand_tilde(root))
+        if resolved.startswith(real_root + os.sep):
+            return True
+    return False
+
 
 def _protected_instruction_config() -> tuple[bool, list[str]]:
     """Return ``(enabled, extra_patterns)`` from ``security.protected_instruction_files`` /
@@ -232,11 +253,16 @@ def _protected_instruction_reason(filepath: str, task_id: str = "default",
         if resolved == real_home or resolved.startswith(real_home + os.sep):
             return None
 
+    # Workshop SOUL.md drafts skip only the built-in basename rule; extra patterns
+    # and the project-local ``.hermes`` rule still apply.
+    soul_workshop = _is_soul_workshop_file(normalized, resolved)
+
     for candidate in (normalized, resolved):
         base = os.path.basename(candidate)
         base_lower = base.lower()
-        if base_lower in _PROTECTED_INSTRUCTION_BASENAMES or any(
-                fnmatch.fnmatch(base_lower, pattern.lower()) for pattern in extra_patterns):
+        if base_lower in _PROTECTED_INSTRUCTION_BASENAMES and not soul_workshop:
+            return base
+        if any(fnmatch.fnmatch(base_lower, pattern.lower()) for pattern in extra_patterns):
             return base
         # Project-local .hermes config dirs (<repo>/.hermes/config.yaml) steer
         # behavior too. Only the IMMEDIATE parent counts — matching any ancestor
