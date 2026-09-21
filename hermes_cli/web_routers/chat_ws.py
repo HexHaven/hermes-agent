@@ -436,11 +436,7 @@ async def pty_ws(ws: WebSocket) -> None:
     if gate is None:
         return
     peer, mode, cred = gate
-    requested_cwd = ws.query_params.get("cwd")
-    if requested_cwd is not None and "hermes-pty-cwd-v1" in ws.scope.get("subprotocols", []):
-        await ws.accept(subprotocol="hermes-pty-cwd-v1")
-    else:
-        await ws.accept()
+    await ws.accept()
     _log.info("pty accepted peer=%s mode=%s cred=%s", peer, mode, cred)
 
     # Native Windows can't import the POSIX PTY bridge: say so and close cleanly.
@@ -453,25 +449,6 @@ async def pty_ws(ws: WebSocket) -> None:
         )
         await ws.close(code=1011)
         return
-
-    if requested_cwd is not None:
-        try:
-            if not requested_cwd:
-                raise ValueError("cwd must not be empty")
-            requested_path = Path(requested_cwd).resolve(strict=True)
-            if not requested_path.is_dir():
-                raise ValueError("cwd is not a directory")
-            requested_cwd = str(requested_path)
-        except (OSError, ValueError, RuntimeError) as exc:
-            if isinstance(exc, FileNotFoundError):
-                reason = "cwd does not exist"
-            elif isinstance(exc, ValueError):
-                reason = str(exc)
-            else:
-                reason = "cwd cannot be accessed"
-            await ws.send_text(f"\r\nInvalid cwd: {reason}\r\n")
-            await ws.close(code=4400, reason=_ws_close_reason(reason))
-            return
 
     raw_resume = ws.query_params.get("resume") or None
     resume = raw_resume
@@ -511,29 +488,13 @@ async def pty_ws(ws: WebSocket) -> None:
         await _pty_fail(ws, exc)
         return
 
-    if requested_cwd is not None:
-        env = dict(env or {})
-        python = str(env.get("HERMES_PYTHON") or "").strip()
-        if python and not Path(python).is_absolute() and Path(python).name != python:
-            # Keep the validated interpreter's location (and venv symlink).
-            env["HERMES_PYTHON"] = str((Path(env["HERMES_CWD"]) / python).absolute())
-        cwd = requested_cwd
-        env["HERMES_CWD"] = cwd
-        env["TERMINAL_CWD"] = cwd
-        # Transport only explicit launch intent, not the default HERMES_CWD.
-        env["HERMES_TUI_LAUNCH_CWD"] = cwd
-
     attach_token = ws.query_params.get("attach") or None
     registry_resume = raw_resume
     if raw_resume and env:
         registry_resume = env.get("HERMES_TUI_RESUME") or raw_resume
-    if attach_token is not None:
-        if requested_cwd is not None:
-            # A structured key cannot collide with an opaque legacy string token.
-            attach_token = (attach_token, profile or "", registry_resume or "", requested_cwd)
-        elif registry_resume or profile:
-            # Preserve the legacy key and canonical explicit-resume target.
-            attach_token = f"{attach_token}\0{profile or ''}\0{registry_resume or ''}"
+    if attach_token is not None and (registry_resume or profile):
+        # Key explicit resumes on their canonical target, never the active-session fallback.
+        attach_token = f"{attach_token}\0{profile or ''}\0{registry_resume or ''}"
 
     def _spawn():
         return PtyBridge.spawn(argv, cwd=cwd, env=env)

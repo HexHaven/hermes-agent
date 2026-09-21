@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Callable, Dict, Hashable, Optional, Tuple
+from typing import Callable, Dict, Optional, Tuple
 
 WS_CLOSE_PROCESS_EXITED = 4410
 WS_CLOSE_SUPERSEDED = 4409
@@ -43,7 +43,7 @@ async def _close_ws(ws, code: int) -> None:
 
 
 class PtySession:
-    def __init__(self, key: Hashable, bridge, *, buffer_cap: int, read_timeout: float) -> None:
+    def __init__(self, key: str, bridge, *, buffer_cap: int, read_timeout: float) -> None:
         self.key = key
         self.bridge = bridge
         self.buffer = RingBuffer(buffer_cap)
@@ -172,9 +172,9 @@ class PtySessionRegistry:
         self._max = max_sessions
         self._buffer_cap = buffer_cap
         self._read_timeout = read_timeout
-        self._sessions: Dict[Hashable, PtySession] = {}
+        self._sessions: Dict[str, PtySession] = {}
 
-    async def attach_or_spawn(self, key: Hashable, *, spawn: Callable[[], object]) -> Tuple[PtySession, bool]:
+    async def attach_or_spawn(self, key: str, *, spawn: Callable[[], object]) -> Tuple[PtySession, bool]:
         await self.reap_idle()
         existing = self._sessions.get(key)
         if existing is not None and existing.alive:
@@ -192,7 +192,7 @@ class PtySessionRegistry:
         self._sessions[key] = session
         return session, True
 
-    def detach(self, key: Hashable, ws) -> None:
+    def detach(self, key: str, ws) -> None:
         s = self._sessions.get(key)
         if s is not None:
             s.detach(ws)

@@ -752,11 +752,6 @@ export class GatewayClient extends EventEmitter {
   private notConnected = (method: string) => new Error(`gateway not connected: ${method}`)
 
   request<T = unknown>(method: string, params: Record<string, unknown> = {}, timeoutMs?: number): Promise<T> {
-    // An attached gateway does not inherit the PTY child's environment. Carry
-    // its chosen directory through the existing per-session cwd contract.
-    if (method === 'session.create' && params.cwd === undefined && process.env.HERMES_TUI_LAUNCH_CWD) {
-      params = { ...params, cwd: process.env.HERMES_TUI_LAUNCH_CWD }
-    }
     const attachUrl = resolveGatewayAttachUrl()
 
     if (attachUrl) {

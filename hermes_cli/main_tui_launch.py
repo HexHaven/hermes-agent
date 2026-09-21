@@ -554,8 +554,7 @@ def _make_tui_argv(tui_dir: Path, tui_dev: bool) -> tuple[list[str], Path]:
     #   #56665.
     if not tui_dev:
         if ext_dir:
-            # The PTY may launch in a caller-selected working directory.
-            p = Path(ext_dir).resolve()
+            p = Path(ext_dir)
             if (p / "dist" / "entry.js").is_file():
                 return [_tui_node_bin("node"), "--expose-gc", str(p / "dist" / "entry.js")], p
 
@@ -682,8 +681,6 @@ def _safe_tui_cwd(env: Optional[dict] = None) -> str:
 def _apply_tui_python_env(env: dict) -> None:
     """Seed/repair Python-related env vars shared by CLI and dashboard TUI launches."""
     from hermes_cli.main import PROJECT_ROOT
-    # Only the PTY route may add explicit cwd intent after launch preparation.
-    env.pop("HERMES_TUI_LAUNCH_CWD", None)
     src_root = str(env.get("HERMES_PYTHON_SRC_ROOT") or "").strip()
     if not src_root or not Path(src_root).is_dir():
         env["HERMES_PYTHON_SRC_ROOT"] = str(PROJECT_ROOT)
