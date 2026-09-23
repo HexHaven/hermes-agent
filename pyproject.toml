@@ -430,7 +430,7 @@ build-backend = "setuptools.build_meta"
 
 [project.scripts]
 hermes = "hermes_cli.main:main"
-hermes-agent = "run_agent:main"
+hermes-agent = "agent.legacy_cli:main"
 hermes-acp = "acp_adapter.entry:main"
 
 [tool.uv]
@@ -618,6 +618,9 @@ gateway = ["assets/**/*"]
 # sealed wheels with the plugin Python modules; without this declaration the
 # wheel contains adapters but discovery finds zero bundled plugins.
 plugins = ["**/plugin.yaml", "**/plugin.yml"]
+# Bot Desktop starts Xvnc + Xfce through a shell launcher and seeds the wallpaper; both are read
+# via Path(__file__).parent in tools/bot_desktop/runtime.py and vanish from sealed wheels otherwise.
+tools = ["bot_desktop/launcher.sh", "bot_desktop/wallpaper.png"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

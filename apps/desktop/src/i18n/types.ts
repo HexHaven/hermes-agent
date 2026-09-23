@@ -2609,6 +2609,12 @@ export interface Translations {
     projectEmpty: string
     projectLoadFailed: string
     noSessions: string
+    storageCorrupt: {
+      title: string
+      body: (profiles: string) => string
+      action: string
+      guide: string
+    }
     noFilterMatches: string
     projects: {
       showAllSessions: string
@@ -3098,6 +3104,13 @@ export interface Translations {
     everythingSkipped: string
     everythingRowFailed: string
     everythingFanoutFailedTitle: string
+    changeLogNew: string
+    changeLogFixed: string
+    changeLogFaster: string
+    changeLogImproved: string
+    changeLogOther: string
+    changeLogFallbackLabel: string
+    changeLogFallbackItem: string
     applyStatus: {
       preparing: string
       pulling: string
@@ -3992,6 +4005,7 @@ export interface Translations {
     sudoTitle: string
     sudoDesc: string
     sudoCommandUnavailable: string
+    sudoInstallDesc: string
     sudoPlaceholder: string
     secretTitle: string
     secretDesc: string
